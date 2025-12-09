@@ -1,0 +1,56 @@
+# Mini Transformer Configuration
+
+# Model Architecture
+model:
+  d_model: 256
+  n_heads: 8
+  n_layers: 6
+  block_size: 256
+  vocab_size: null
+  dropout: 0.1
+  use_mqa: false
+  tie_weights: true
+
+# Training
+training:
+  batch_size: 32
+  learning_rate: 3.0e-4
+  weight_decay: 0.1
+  max_iters: 100000
+  warmup_iters: 5000
+  eval_interval: 5000
+  eval_iters: 1000
+  grad_clip: 1.0
+  dropout_anneal: true
+  dropout_min: 0.05
+
+# Data
+data:
+  dataset_path: "data/input.txt"
+  train_split: 0.9
+  encoding: "char"
+
+# Generation
+generation:
+  temperature: 0.8
+  top_k: 40
+  top_p: 0.9
+  max_new_tokens: 200
+
+# System
+system:
+  device: "cuda"
+  compile: false
+  seed: 42
+  checkpoint_dir: "checkpoints"
+  log_interval: 10
+
+# Advanced Features
+advanced:
+  use_lora: false
+  lora_rank: 8
+  lora_alpha: 16
+  quantize: null
+  profile_model: false
+  log_attention: false
+  speculative_sampling: false
