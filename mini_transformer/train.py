@@ -1,8 +1,3 @@
-"""
-Training script for Mini Transformer
-Includes AdamW, cosine LR schedule, gradient clipping, validation, and checkpointing
-"""
-
 import torch
 import torch.nn as nn
 from pathlib import Path
@@ -19,7 +14,6 @@ from utils import (load_config, set_seed, get_device, count_parameters,
 
 @torch.no_grad()
 def estimate_loss(model: nn.Module, dataset, config: dict, device: torch.device) -> dict:
-    """Estimate loss on train and val splits"""
     model.eval()
     splits = ['train', 'val']
     losses = {}
@@ -41,54 +35,43 @@ def estimate_loss(model: nn.Module, dataset, config: dict, device: torch.device)
 
 
 def train(config_path: str = "config.yaml", resume: bool = False):
-    """Main training loop"""
     
-    # Load config
     config = load_config(config_path)
     print("Configuration loaded")
     
-    # Set seed
     set_seed(config['system']['seed'])
     
-    # Device
     device = get_device(config['system']['device'])
     print(f"Using device: {device}")
     
-    # Create dataset
     dataset = create_dataset(config)
     config['model']['vocab_size'] = dataset.vocab_size
     
-    # Create model
     model = create_model(config)
     model = model.to(device)
     
-    # Profile model
     if config['advanced'].get('profile_model', False):
         profile_model(model, config)
     else:
         n_params = count_parameters(model)
         print(f"Model parameters: {n_params:,} ({n_params/1e6:.2f}M)")
     
-    # Optimizer
     optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=config['training']['learning_rate'],
         weight_decay=config['training']['weight_decay']
     )
     
-    # Learning rate scheduler
     scheduler = CosineWarmupScheduler(
         optimizer,
         warmup_iters=config['training']['warmup_iters'],
         max_iters=config['training']['max_iters']
     )
     
-    # Logger
     checkpoint_dir = config['system']['checkpoint_dir']
     Path(checkpoint_dir).mkdir(parents=True, exist_ok=True)
     logger = Logger(log_file=f"{checkpoint_dir}/train.log")
     
-    # Resume from checkpoint
     start_iter = 0
     if resume:
         checkpoint_path = f"{checkpoint_dir}/checkpoint_latest.pt"
@@ -96,12 +79,10 @@ def train(config_path: str = "config.yaml", resume: bool = False):
             start_iter = load_checkpoint(checkpoint_path, model, optimizer)
             print(f"Resumed from iteration {start_iter}")
     
-    # Compile model (PyTorch 2.0+)
     if config['system'].get('compile', False):
         print("Compiling model...")
         model = torch.compile(model)
     
-    # Training loop
     print("\nStarting training...")
     print("=" * 60)
     
@@ -115,10 +96,8 @@ def train(config_path: str = "config.yaml", resume: bool = False):
     for iter_num in range(start_iter, config['training']['max_iters']):
         t0 = time.time()
         
-        # Update learning rate
         lr = scheduler.step(iter_num)
         
-        # Dropout annealing
         if config['training'].get('dropout_anneal', False):
             dropout_rate = get_dropout_rate(
                 iter_num, 
@@ -130,29 +109,22 @@ def train(config_path: str = "config.yaml", resume: bool = False):
                 if isinstance(module, nn.Dropout):
                     module.p = dropout_rate
         
-        # Get batch
         x, y = next(iter_data)
         
-        # Forward pass
         logits, loss, _ = model(x, y)
         
-        # Backward pass
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
         
-        # Gradient clipping
         grad_norm = get_grad_norm(model)
         if config['training']['grad_clip'] > 0:
             torch.nn.utils.clip_grad_norm_(model.parameters(), config['training']['grad_clip'])
         
-        # Optimizer step
         optimizer.step()
         
-        # Timing
         t1 = time.time()
         dt = t1 - t0
         
-        # Logging
         if iter_num % config['system']['log_interval'] == 0:
             perplexity = compute_perplexity(loss.item())
             metrics = {
@@ -165,7 +137,6 @@ def train(config_path: str = "config.yaml", resume: bool = False):
             }
             logger.log(iter_num, metrics)
         
-        # Evaluation
         if iter_num % config['training']['eval_interval'] == 0 or iter_num == config['training']['max_iters'] - 1:
             losses = estimate_loss(model, dataset, config, device)
             train_ppl = compute_perplexity(losses['train'])
@@ -177,7 +148,6 @@ def train(config_path: str = "config.yaml", resume: bool = False):
             print(f"Val loss: {losses['val']:.4f} | Val PPL: {val_ppl:.2f}")
             print("=" * 60)
             
-            # Save checkpoint
             if losses['val'] < best_val_loss:
                 best_val_loss = losses['val']
                 save_checkpoint(model, optimizer, iter_num, losses['val'], config, checkpoint_dir)
