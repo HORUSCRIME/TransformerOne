@@ -1,4 +1,3 @@
-"""Data pipeline for character-level or byte-level language modeling"""
 
 import torch
 import numpy as np
@@ -7,7 +6,6 @@ from pathlib import Path
 
 
 class TextDataset:
-    """Character-level or byte-level text dataset"""
     
     def __init__(self, data_path: str, encoding: str = "char", train_split: float = 0.9):
         self.data_path = data_path
@@ -69,7 +67,6 @@ class TextDataset:
 
 
 class DataLoader:
-    """Simple data loader wrapper"""
     
     def __init__(self, dataset: TextDataset, split: str, batch_size: int, 
                  block_size: int, device: str = "cpu"):
@@ -90,7 +87,6 @@ class DataLoader:
 
 
 def create_dataset(config: Dict) -> TextDataset:
-    """Create dataset from config"""
     data_config = config['data']
     data_path = data_config['dataset_path']
     
@@ -109,7 +105,6 @@ def create_dataset(config: Dict) -> TextDataset:
 
 
 def create_sample_data(output_path: str):
-    """Create a sample text file for testing"""
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     
     sample_text = """The quick brown fox jumps over the lazy dog. This is a sample text file for training a mini transformer model.
