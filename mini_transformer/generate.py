@@ -1,6 +1,3 @@
-"""
-Text generation script with KV-cache, temperature, top-k, and top-p sampling
-"""
 
 import torch
 import argparse
@@ -14,45 +11,24 @@ from utils import load_config, get_device, load_checkpoint
 def generate_text(model, dataset, prompt: str, max_new_tokens: int = 200,
                  temperature: float = 0.8, top_k: int = 40, top_p: float = 0.9,
                  device: torch.device = torch.device('cpu'), stream: bool = False):
-    """
-    Generate text from a prompt.
-    
-    Args:
-        model: Trained transformer model
-        dataset: Dataset with encode/decode functions
-        prompt: Starting text
-        max_new_tokens: Number of tokens to generate
-        temperature: Sampling temperature (higher = more random)
-        top_k: Top-k sampling parameter
-        top_p: Top-p (nucleus) sampling parameter
-        device: Device to run on
-        stream: If True, print tokens as they're generated
-    
-    Returns:
-        Generated text
-    """
+
     model.eval()
     
-    # Encode prompt
     if prompt:
         tokens = dataset.encode(prompt)
         idx = torch.tensor(tokens, dtype=torch.long, device=device).unsqueeze(0)
     else:
-        # Start with random token
         idx = torch.randint(0, dataset.vocab_size, (1, 1), device=device)
     
     if stream:
         print(prompt, end='', flush=True)
     
-    # Generate
     with torch.no_grad():
         kv_caches = None
         
         for _ in range(max_new_tokens):
-            # Crop context if needed
             idx_cond = idx if idx.size(1) <= model.config.block_size else idx[:, -model.config.block_size:]
             
-            # Forward pass with KV-cache
             if kv_caches is not None:
                 logits, _, kv_caches = model(idx_cond[:, -1:], kv_caches=kv_caches, use_cache=True)
             else:
@@ -60,12 +36,10 @@ def generate_text(model, dataset, prompt: str, max_new_tokens: int = 200,
             
             logits = logits[:, -1, :] / temperature
             
-            # Top-k sampling
             if top_k is not None and top_k > 0:
                 v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
                 logits[logits < v[:, [-1]]] = -float('Inf')
             
-            # Top-p sampling
             if top_p is not None and top_p < 1.0:
                 sorted_logits, sorted_indices = torch.sort(logits, descending=True)
                 cumulative_probs = torch.cumsum(torch.softmax(sorted_logits, dim=-1), dim=-1)
@@ -75,23 +49,18 @@ def generate_text(model, dataset, prompt: str, max_new_tokens: int = 200,
                 indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
                 logits[indices_to_remove] = -float('Inf')
             
-            # Sample
             probs = torch.softmax(logits, dim=-1)
             idx_next = torch.multinomial(probs, num_samples=1)
             
-            # Append to sequence
             idx = torch.cat((idx, idx_next), dim=1)
             
-            # Stream output
             if stream:
                 token = idx_next.item()
                 char = dataset.decode([token])
                 print(char, end='', flush=True)
     
     if stream:
-        print()  # Newline at end
-    
-    # Decode full sequence
+        print()  
     generated_tokens = idx[0].tolist()
     generated_text = dataset.decode(generated_tokens)
     
@@ -99,7 +68,6 @@ def generate_text(model, dataset, prompt: str, max_new_tokens: int = 200,
 
 
 def interactive_mode(model, dataset, config, device):
-    """Interactive text generation mode"""
     print("\n" + "=" * 60)
     print("INTERACTIVE GENERATION MODE")
     print("=" * 60)
@@ -108,7 +76,6 @@ def interactive_mode(model, dataset, config, device):
     print("Type 'config' to change generation parameters.")
     print("=" * 60 + "\n")
     
-    # Default generation params
     gen_config = config['generation']
     temperature = gen_config['temperature']
     top_k = gen_config['top_k']
@@ -168,11 +135,9 @@ def main():
     
     args = parser.parse_args()
     
-    # Load config
     config = load_config(args.config)
     device = get_device(config['system']['device'])
     
-    # Load dataset (for vocab)
     dataset = TextDataset(
         config['data']['dataset_path'],
         encoding=config['data']['encoding'],
@@ -180,11 +145,9 @@ def main():
     )
     config['model']['vocab_size'] = dataset.vocab_size
     
-    # Create model
     model = create_model(config)
     model = model.to(device)
     
-    # Load checkpoint
     checkpoint_path = args.checkpoint
     if checkpoint_path is None:
         checkpoint_path = f"{config['system']['checkpoint_dir']}/checkpoint_latest.pt"
@@ -197,14 +160,12 @@ def main():
     load_checkpoint(checkpoint_path, model)
     print(f"Model loaded from {checkpoint_path}")
     
-    # Generation parameters
     gen_config = config['generation']
     max_tokens = args.max_tokens or gen_config['max_new_tokens']
     temperature = args.temperature or gen_config['temperature']
     top_k = args.top_k if args.top_k is not None else gen_config['top_k']
     top_p = args.top_p if args.top_p is not None else gen_config['top_p']
     
-    # Interactive or single generation
     if args.interactive:
         interactive_mode(model, dataset, config, device)
     else:
