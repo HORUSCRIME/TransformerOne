@@ -1,4 +1,3 @@
-"""Utility functions for the mini transformer project"""
 
 import yaml
 import torch
@@ -11,14 +10,12 @@ import math
 
 
 def load_config(config_path: str = "config.yaml") -> Dict[str, Any]:
-    """Load configuration from YAML file"""
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
     return config
 
 
 def set_seed(seed: int):
-    """Set random seed for reproducibility"""
     torch.manual_seed(seed)
     np.random.seed(seed)
     if torch.cuda.is_available():
@@ -26,26 +23,22 @@ def set_seed(seed: int):
 
 
 def get_device(device_str: str = "cuda") -> torch.device:
-    """Get torch device"""
     if device_str == "cuda" and torch.cuda.is_available():
         return torch.device("cuda")
     return torch.device("cpu")
 
 
 def count_parameters(model: nn.Module) -> int:
-    """Count trainable parameters in model"""
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
 def estimate_flops(model: nn.Module, seq_len: int, vocab_size: int) -> int:
-    """Rough estimate of FLOPs per forward pass"""
     n_params = count_parameters(model)
     flops = 6 * n_params * seq_len
     return flops
 
 
 def profile_model(model: nn.Module, config: Dict[str, Any]):
-    """Print model statistics"""
     n_params = count_parameters(model)
     block_size = config['model']['block_size']
     vocab_size = config['model']['vocab_size']
@@ -66,7 +59,6 @@ def profile_model(model: nn.Module, config: Dict[str, Any]):
 
 
 class Logger:
-    """Simple training logger"""
     
     def __init__(self, log_file: Optional[str] = None):
         self.log_file = log_file
@@ -90,12 +82,10 @@ class Logger:
 
 
 def compute_perplexity(loss: float) -> float:
-    """Compute perplexity from cross-entropy loss"""
     return math.exp(loss)
 
 
 def get_grad_norm(model: nn.Module) -> float:
-    """Compute gradient norm across all parameters"""
     total_norm = 0.0
     for p in model.parameters():
         if p.grad is not None:
@@ -108,7 +98,6 @@ def get_grad_norm(model: nn.Module) -> float:
 def save_checkpoint(model: nn.Module, optimizer: torch.optim.Optimizer, 
                    step: int, loss: float, config: Dict[str, Any], 
                    checkpoint_dir: str = "checkpoints"):
-    """Save model checkpoint"""
     Path(checkpoint_dir).mkdir(parents=True, exist_ok=True)
     
     checkpoint = {
@@ -129,7 +118,6 @@ def save_checkpoint(model: nn.Module, optimizer: torch.optim.Optimizer,
 
 def load_checkpoint(checkpoint_path: str, model: nn.Module, 
                    optimizer: Optional[torch.optim.Optimizer] = None) -> int:
-    """Load model checkpoint. Returns the step number"""
     checkpoint = torch.load(checkpoint_path, map_location='cpu')
     model.load_state_dict(checkpoint['model_state_dict'])
     
@@ -142,7 +130,6 @@ def load_checkpoint(checkpoint_path: str, model: nn.Module,
 
 
 class CosineWarmupScheduler:
-    """Cosine learning rate scheduler with warmup"""
     
     def __init__(self, optimizer: torch.optim.Optimizer, warmup_iters: int, 
                  max_iters: int, min_lr_ratio: float = 0.1):
@@ -168,7 +155,6 @@ class CosineWarmupScheduler:
 
 def get_dropout_rate(current_iter: int, max_iters: int, 
                     dropout_start: float, dropout_end: float) -> float:
-    """Compute annealed dropout rate"""
     progress = min(current_iter / max_iters, 1.0)
     return dropout_start + (dropout_end - dropout_start) * progress
 
