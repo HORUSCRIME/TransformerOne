@@ -1,8 +1,3 @@
-"""
-Mini Transformer Language Model
-Features: RoPE, PreNorm, SWIGLU, Multi-Query Attention, KV-cache, Weight Tying
-"""
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -24,7 +19,6 @@ class ModelConfig:
 
 
 class RoPE(nn.Module):
-    """Rotary Positional Embeddings"""
     
     def __init__(self, dim: int, max_seq_len: int = 2048):
         super().__init__()
@@ -32,7 +26,6 @@ class RoPE(nn.Module):
         inv_freq = 1.0 / (10000 ** (torch.arange(0, dim, 2).float() / dim))
         self.register_buffer('inv_freq', inv_freq)
         
-        # Precompute for max sequence length
         t = torch.arange(max_seq_len, dtype=torch.float32)
         freqs = torch.outer(t, inv_freq)
         emb = torch.cat((freqs, freqs), dim=-1)
@@ -44,7 +37,6 @@ class RoPE(nn.Module):
 
 
 def apply_rotary_emb(q: torch.Tensor, k: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Apply rotary embeddings to queries and keys"""
     def rotate_half(x):
         x1, x2 = x[..., :x.shape[-1]//2], x[..., x.shape[-1]//2:]
         return torch.cat((-x2, x1), dim=-1)
@@ -55,7 +47,6 @@ def apply_rotary_emb(q: torch.Tensor, k: torch.Tensor, cos: torch.Tensor, sin: t
 
 
 class SWIGLU(nn.Module):
-    """SwiGLU activation function"""
     
     def __init__(self, dim: int, hidden_dim: Optional[int] = None, dropout: float = 0.0):
         super().__init__()
@@ -70,7 +61,6 @@ class SWIGLU(nn.Module):
 
 
 class MultiHeadAttention(nn.Module):
-    """Multi-Head Self-Attention with optional MQA and KV-cache"""
     
     def __init__(self, config: ModelConfig):
         super().__init__()
@@ -84,7 +74,6 @@ class MultiHeadAttention(nn.Module):
         self.q_proj = nn.Linear(config.d_model, config.d_model, bias=False)
         
         if config.use_mqa:
-            # Multi-Query: single K/V head
             self.k_proj = nn.Linear(config.d_model, self.head_dim, bias=False)
             self.v_proj = nn.Linear(config.d_model, self.head_dim, bias=False)
         else:
@@ -100,7 +89,6 @@ class MultiHeadAttention(nn.Module):
                 use_cache: bool = False) -> Tuple[torch.Tensor, Optional[Tuple[torch.Tensor, torch.Tensor]]]:
         B, T, C = x.shape
         
-        # Project queries, keys, values
         q = self.q_proj(x).view(B, T, self.n_heads, self.head_dim).transpose(1, 2)
         
         if self.use_mqa:
@@ -110,11 +98,9 @@ class MultiHeadAttention(nn.Module):
             k = self.k_proj(x).view(B, T, self.n_heads, self.head_dim).transpose(1, 2)
             v = self.v_proj(x).view(B, T, self.n_heads, self.head_dim).transpose(1, 2)
         
-        # Apply RoPE
         cos, sin = self.rope(x, T)
         q, k = apply_rotary_emb(q, k, cos, sin)
         
-        # KV-cache for inference
         if kv_cache is not None:
             k_cache, v_cache = kv_cache
             k = torch.cat([k_cache, k], dim=2)
@@ -122,12 +108,10 @@ class MultiHeadAttention(nn.Module):
         
         new_cache = (k, v) if use_cache else None
         
-        # Expand k, v for MQA
         if self.use_mqa:
             k = k.expand(-1, self.n_heads, -1, -1)
             v = v.expand(-1, self.n_heads, -1, -1)
         
-        # Attention
         attn = (q @ k.transpose(-2, -1)) / math.sqrt(self.head_dim)
         
         if mask is not None:
@@ -144,7 +128,6 @@ class MultiHeadAttention(nn.Module):
 
 
 class TransformerBlock(nn.Module):
-    """Transformer block with PreNorm"""
     
     def __init__(self, config: ModelConfig):
         super().__init__()
@@ -156,7 +139,6 @@ class TransformerBlock(nn.Module):
     def forward(self, x: torch.Tensor, mask: Optional[torch.Tensor] = None,
                 kv_cache: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
                 use_cache: bool = False) -> Tuple[torch.Tensor, Optional[Tuple[torch.Tensor, torch.Tensor]]]:
-        # PreNorm: normalize before attention
         attn_out, new_cache = self.attn(self.ln1(x), mask, kv_cache, use_cache)
         x = x + attn_out
         x = x + self.mlp(self.ln2(x))
@@ -164,7 +146,6 @@ class TransformerBlock(nn.Module):
 
 
 class MiniTransformer(nn.Module):
-    """Mini Transformer Language Model"""
     
     def __init__(self, config: ModelConfig):
         super().__init__()
@@ -178,11 +159,9 @@ class MiniTransformer(nn.Module):
         
         self.lm_head = nn.Linear(config.d_model, config.vocab_size, bias=False)
         
-        # Weight tying
         if config.tie_weights:
             self.lm_head.weight = self.token_emb.weight
         
-        # Causal mask
         self.register_buffer('causal_mask', 
                            torch.tril(torch.ones(config.block_size, config.block_size)).view(1, 1, config.block_size, config.block_size))
         
@@ -203,10 +182,8 @@ class MiniTransformer(nn.Module):
         x = self.token_emb(idx)
         x = self.dropout(x)
         
-        # Causal mask
         mask = self.causal_mask[:, :, :T, :T] if kv_caches is None else None
         
-        # Transformer blocks
         new_caches = [] if use_cache else None
         for i, block in enumerate(self.blocks):
             cache = kv_caches[i] if kv_caches is not None else None
@@ -227,28 +204,22 @@ class MiniTransformer(nn.Module):
     def generate(self, idx: torch.Tensor, max_new_tokens: int, temperature: float = 1.0,
                  top_k: Optional[int] = None, top_p: Optional[float] = None,
                  use_cache: bool = True) -> torch.Tensor:
-        """Generate tokens autoregressively with KV-cache"""
         kv_caches = None
         
         for _ in range(max_new_tokens):
-            # Crop context if needed
             idx_cond = idx if idx.size(1) <= self.config.block_size else idx[:, -self.config.block_size:]
             
-            # Forward pass
             if use_cache and kv_caches is not None:
-                # Only process last token
                 logits, _, kv_caches = self(idx_cond[:, -1:], kv_caches=kv_caches, use_cache=True)
             else:
                 logits, _, kv_caches = self(idx_cond, use_cache=use_cache)
             
             logits = logits[:, -1, :] / temperature
             
-            # Top-k sampling
             if top_k is not None:
                 v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
                 logits[logits < v[:, [-1]]] = -float('Inf')
             
-            # Top-p (nucleus) sampling
             if top_p is not None:
                 sorted_logits, sorted_indices = torch.sort(logits, descending=True)
                 cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
@@ -266,7 +237,6 @@ class MiniTransformer(nn.Module):
 
 
 def create_model(config: dict) -> MiniTransformer:
-    """Create model from config dict"""
     model_config = ModelConfig(
         d_model=config['model']['d_model'],
         n_heads=config['model']['n_heads'],
